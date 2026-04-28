@@ -1,9 +1,13 @@
-from typing import Optional
+from typing import Optional, List
+import hashlib
+import json
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, Response, status
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.db import db_async_client
+from src.schemas.event import EventModel
 from src.schemas.eventwrited import EventWrited
 from src.services.events import EventsService
 
@@ -26,16 +30,39 @@ async def create_event(data: EventWrited, token: str = Header(...), session: Asy
     return event
 
 
-@events_router.get("/all")
-async def get_all_stops(token: Optional[str] = Header(None), session: AsyncSession = db_async_client):
+@events_router.get(
+    "/all",
+    response_model=List[EventModel],
+    responses={status.HTTP_304_NOT_MODIFIED: {"description": "Не изменилось"}},
+)
+async def get_all_events(
+    token: Optional[str] = Header(None),
+    if_none_match: Optional[str] = Header(None),
+    session: AsyncSession = db_async_client,
+):
     """
     Передает список всех дорожных событий
     :param token: Авторизационный токен пользователя
+    :param if_none_match: ETag текущей версии данных на клиенте
     :param session: Сессия БД
-    :return: Список моделей дорожных событий
+    :return: Список моделей дорожных событий или 304, если данные не изменились
     """
     events = await EventsService.get_all_events(session, token)
-    return events
+
+    events_json = json.dumps(jsonable_encoder(events), sort_keys=True, ensure_ascii=False)
+    etag = hashlib.md5(events_json.encode("utf-8")).hexdigest()
+
+    if if_none_match == etag:
+        return Response(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            headers={"ETag": etag},
+        )
+
+    return Response(
+        content=events_json,
+        media_type="application/json",
+        headers={"ETag": etag},
+    )
 
 
 @events_router.delete("/clear")

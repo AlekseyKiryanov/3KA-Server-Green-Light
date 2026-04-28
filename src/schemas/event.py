@@ -11,3 +11,12 @@ class EventInput(BaseModel):
 
 class EventUpd(EventInput):
     id: str
+
+class EventModel(BaseModel):
+    id: str
+    type: int
+    line: int
+    lat: float
+    lon: float
+    moderated: int
+    my: bool
